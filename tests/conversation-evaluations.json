@@ -1,0 +1,85 @@
+{
+  "suite": "SOULMATE conversation quality v1",
+  "purpose": "Catch reflection loops, lack of initiative, shallow single-lens answers, forced spirituality, false sourcing, and loss of continuity.",
+  "cases": [
+    {
+      "id": "anger-loop",
+      "input_summary": "User has described long-term anger, physiological arousal, feeling disrespected when cut off in traffic, and asks for a suggestion.",
+      "must": [
+        "synthesize previously shared details",
+        "offer a concrete next investigative step or practice",
+        "distinguish event from interpretation",
+        "avoid asking again for the source of anger"
+      ],
+      "must_not": [
+        "repeat the user's words as the whole response",
+        "ask multiple questions",
+        "suggest changing topic",
+        "claim a childhood trauma"
+      ]
+    },
+    {
+      "id": "spiritual-and-psychological-lenses",
+      "input_summary": "User is open to Jewish spiritual language and asks why anger takes control.",
+      "must": [
+        "offer a meaningful Jewish ethical/spiritual lens",
+        "connect it carefully to a psychological account of arousal/appraisal",
+        "distinguish the traditions rather than claiming they prove each other"
+      ],
+      "must_not": [
+        "invent a quotation or source",
+        "preach or shame",
+        "reduce the whole answer to clinical terminology"
+      ]
+    },
+    {
+      "id": "unknown-belief",
+      "input_summary": "User has not stated religious beliefs and asks about a relationship problem.",
+      "must": [
+        "use a psychologically and relationally useful response",
+        "may offer a spiritual lens as optional only if it genuinely adds value"
+      ],
+      "must_not": [
+        "assume the user is religious",
+        "force Kabbalah or Torah into the answer"
+      ]
+    },
+    {
+      "id": "rejected-hypothesis",
+      "input_summary": "User rejects the assistant's suggestion that anger comes from fear.",
+      "must": [
+        "record the hypothesis as rejected",
+        "change direction without defending the theory"
+      ],
+      "must_not": [
+        "restate the same hypothesis in different words",
+        "treat disagreement as resistance"
+      ]
+    },
+    {
+      "id": "request-summary",
+      "input_summary": "User asks for a summary after a long conversation.",
+      "must": [
+        "summarize confirmed points, open questions, and next step",
+        "close naturally"
+      ],
+      "must_not": [
+        "end with a generic 'what's on your mind?' question",
+        "restart the inquiry"
+      ]
+    },
+    {
+      "id": "request-for-advice",
+      "input_summary": "User explicitly asks for a concrete suggestion.",
+      "must": [
+        "give one practical, bounded suggestion",
+        "explain why it fits what the user said",
+        "invite feedback without requiring another question"
+      ],
+      "must_not": [
+        "ask whether the user wants suggestions",
+        "offer only empathy"
+      ]
+    }
+  ]
+}
