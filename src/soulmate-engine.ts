@@ -1,3 +1,5 @@
+import { retrieveKnowledge as retrieveKnowledgeFromD1 } from "./knowledge-retrieval";
+
 /**
  * SOULMATE — adaptive, multi-perspective conversation engine.
  *
@@ -44,14 +46,17 @@ export interface D1Statement {
   run(): Promise<unknown>;
 }
 
+export interface VectorizeMatch { id: string; score: number; metadata?: Record<string, unknown> | null }
+export interface VectorizeIndex {
+  query(vector: number[], options: { topK: number; returnMetadata: "all" }): Promise<{ matches?: VectorizeMatch[] }>;
+}
 export interface SoulmateEnv {
   DB: { prepare(sql: string): D1Statement };
   AI: {
-    run(
-      model: string,
-      input: { messages: Array<{ role: "system" | "user" | "assistant"; content: string }>; max_tokens?: number; temperature?: number }
-    ): Promise<{ response?: string; result?: { response?: string } }>;
+    run(model: string, input: any): Promise<any>;
   };
+  /** Bind the existing chokhmat-yisrael index as VECTORIZE before enabling semantic retrieval. */
+  VECTORIZE?: VectorizeIndex;
 }
 
 export interface ChatMessage {
@@ -87,8 +92,17 @@ export interface SoulmateState {
   updated_at: string;
 }
 
+export interface EmotionalSignals {
+  emotions: string[];
+  intensity: "low" | "moderate" | "high" | "unknown";
+  needs: string[];
+  search_query: string;
+  confidence: "low" | "medium" | "high";
+}
+
 export interface SoulmateTurnResult {
   mode: SoulmateMode;
+  emotional_signals: EmotionalSignals;
   reply: string;
   internal_rationale: string;
   state: SoulmateState;
@@ -157,8 +171,9 @@ const SYSTEM_IDENTITY = `
 - פסיכיאטריה ורפואה: סימפטומים, אבחנות אפשריות, גורמים ביולוגיים, תרופות וטיפול — בזהירות וללא אבחון.
 - מדעי המוח והגוף: עוררות, ויסות, שינה, מתח ותגובות פיזיולוגיות.
 - פילוסופיה ותורות נוספות: משמעות, אתיקה, מודעות, חמלה, חופש והרגל.
-אין לערבב בין התחומים כאילו הם מוכיחים זה את זה. צייני מאיזו מסגרת מגיע רעיון, מה מעמדו ומה מגבלותיו.
-אל תמציאי פסוקים, מקורות קבליים, מחקרים, אבחנות או ציטוטים. השתמשי במקורות שסופקו בהקשר בלבד; אם אין מקור מאומת, הציגי רעיון כללי ללא ייחוס מדומה.
+אין לערבב בין התחומים כאילו הם מוכיחים זה את זה. שמרי על ההבחנה ביניהם בניתוח הפנימי שלך.
+השתמשי בידע שנשלף מהמאגר כדי להעשיר את השיחה באופן טבעי: הפנימי רעיונות, עקרונות, שפה ודרכי התבוננות, וחברי אותם למצבו של האדם. אל תאמרי מי הספר, המחבר או הסרטון שממנו הגיע רעיון, ואל תציגי רשימת מקורות או הערות שוליים בתשובה הרגילה. אל תפתחי ב"מצאתי במאגר" או "לפי הספר". הציעי את התובנה כאפשרות רלוונטית לשיחה, לא כסמכות שמכריעה עבור האדם. אם המשתמש מבקש במפורש מקורות, הציגי את פרטי המקור המדויקים שנשלפו בלבד.
+אל תמציאי פסוקים, מקורות קבליים, מחקרים, אבחנות או ציטוטים. השתמשי רק בתוכן שאכן נשלף או בידע כללי שמוצג ככזה; אל תייחסי רעיון למקור שלא נבדק.
 אל תציגי בכל תשובה את כל תחומי הידע. בחרי את העדשה המתאימה, ולעתים הציעי שתי עדשות משלימות או שונות.
 
 גישה רוחנית:
@@ -211,29 +226,68 @@ function normalizeState(raw: unknown): SoulmateState {
   };
 }
 
+const EMOTION_LABELS = new Set([
+  "כעס","עצב","פחד","חרדה","בושה","אשמה","בדידות","קנאה","תסכול","חוסר אונים",
+  "שמחה","אהבה","הכרת תודה","תקווה","געגוע","עלבון","בלבול","עומס","ייאוש","רוגע"
+]);
+
+async function detectEmotionalSignals(env: SoulmateEnv, message: string, history: ChatMessage[]): Promise<EmotionalSignals> {
+  const fallback: EmotionalSignals = {
+    emotions: [], intensity: "unknown", needs: [], search_query: message.slice(0, 700), confidence: "low"
+  };
+  const context = history.slice(-6).map(m => ({ role: m.role, content: m.content.slice(0, 900) }));
+  try {
+    const response = await env.AI.run(MODEL, {
+      messages: [
+        { role: "system", content: [
+          "נתח את דברי המשתמש לצורך ניתוב חיפוש ידע בלבד.",
+          "זהה רגשות שהמשתמש עצמו מבטא במפורש או בעקיפין; אל תאבחן ואל תייחס רגש ללא בסיס.",
+          "הבחן בין רגש, מחשבה, אירוע, צורך ופרשנות. אפשר להחזיר כמה רגשות או רשימה ריקה.",
+          "החזר JSON בלבד: emotions (מערך תוויות קצרות בעברית), intensity (low|moderate|high|unknown), needs (צרכים אפשריים בניסוח זהיר), search_query (שאילתת חיפוש תמציתית בעברית), confidence (low|medium|high).",
+          "אין להציג את הניתוח למשתמש כעובדה או כאבחנה."
+        ].join("\n") },
+        { role: "user", content: JSON.stringify({ history: context, message }) }
+      ],
+      max_tokens: 300,
+      temperature: 0.1
+    });
+    const raw = response.response || response.result?.response || "";
+    const parsed = parseModelJson(raw);
+    const emotions = Array.isArray(parsed.emotions)
+      ? parsed.emotions.filter((x: unknown) => typeof x === "string" && EMOTION_LABELS.has(x)).slice(0, 4)
+      : [];
+    const intensity = ["low","moderate","high","unknown"].includes(parsed.intensity) ? parsed.intensity : "unknown";
+    const confidence = ["low","medium","high"].includes(parsed.confidence) ? parsed.confidence : "low";
+    const needs = Array.isArray(parsed.needs) ? parsed.needs.filter((x: unknown) => typeof x === "string").slice(0, 3) : [];
+    const search_query = typeof parsed.search_query === "string" && parsed.search_query.trim()
+      ? parsed.search_query.trim().slice(0, 700) : message.slice(0, 700);
+    return { emotions, intensity, needs, search_query, confidence };
+  } catch {
+    return fallback;
+  }
+}
+
 function extractTerms(text: string): string[] {
   const tokens = text.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) || [];
   return [...new Set(tokens.filter(t => !STOP_WORDS.has(t)))].slice(0, 8);
 }
 
 async function retrieveKnowledge(env: SoulmateEnv, text: string): Promise<KnowledgeChunk[]> {
-  const terms = extractTerms(text);
-  if (!terms.length) return [];
-  const clauses = terms.map(() => "(title LIKE ? OR content LIKE ? OR tags LIKE ?)");
-  const params = terms.flatMap(t => [`%${t}%`, `%${t}%`, `%${t}%`]);
   try {
-    const result = await env.DB.prepare(
-      `SELECT id, domain, title, source_name, source_url, source_locator, content, reliability
-       FROM knowledge_chunks
-       WHERE enabled = 1 AND verification_status = 'verified'
-       AND (${clauses.join(" OR ")})
-       ORDER BY priority DESC, reviewed_at DESC
-       LIMIT ${MAX_KNOWLEDGE}`
-    ).bind(...params).all<KnowledgeChunk>();
-    return result.results || [];
+    const passages = await retrieveKnowledgeFromD1(env, text, { topK: MAX_KNOWLEDGE });
+    const allowed: KnowledgeDomain[] = ["torah","kabbalah","jewish_thought","psychology","psychiatry","neuroscience","philosophy","other"];
+    return passages.map(p => ({
+      id: p.chunk_id,
+      domain: allowed.includes(p.domain as KnowledgeDomain) ? p.domain as KnowledgeDomain : "other",
+      title: p.title,
+      source_name: p.author || p.title,
+      source_url: p.source_url,
+      source_locator: [p.section_title, p.locator].filter(Boolean).join(" · ") || null,
+      content: p.content,
+      reliability: [p.rights_status, p.ingestion_status, p.retrieval_method].filter(Boolean).join(" | ")
+    }));
   } catch {
-    // The knowledge migration may not yet be installed. The engine remains usable,
-    // but it must not pretend that source retrieval succeeded.
+    // A retrieval failure must never produce invented source text or citations.
     return [];
   }
 }
@@ -257,11 +311,12 @@ function knowledgeContext(chunks: KnowledgeChunk[]): string {
   ).join("\n\n");
 }
 
-function buildUserPayload(message: string, history: ChatMessage[], state: SoulmateState, chunks: KnowledgeChunk[]) {
+function buildUserPayload(message: string, history: ChatMessage[], state: SoulmateState, chunks: KnowledgeChunk[], emotions: EmotionalSignals) {
   return JSON.stringify({
     current_message: message,
     recent_conversation: history.slice(-MAX_HISTORY),
     conversation_state: state,
+    emotional_signals_for_retrieval_only: emotions,
     retrieved_verified_knowledge: knowledgeContext(chunks),
     required_output: {
       mode: "listen|explore|synthesize|offer_perspective|knowledge|challenge|practice|pause",
@@ -291,16 +346,17 @@ export async function generateSoulmateTurn(
   rawState: unknown
 ): Promise<SoulmateTurnResult> {
   const state = normalizeState(rawState);
-  const relevantText = [state.topic || "", message].join(" ");
-  const chunks = await retrieveKnowledge(env, relevantText);
   const recent = history.slice(-MAX_HISTORY);
+  const emotionalSignals = await detectEmotionalSignals(env, message, recent);
+  const relevantText = [state.topic || "", emotionalSignals.emotions.join(" "), emotionalSignals.needs.join(" "), emotionalSignals.search_query, message].join(" ");
+  const chunks = await retrieveKnowledge(env, relevantText);
 
   const loopWarning = state.repeated_move_count >= 2
     ? "אזהרת תקיעות: שתי התגובות האחרונות חזרו על אותו מהלך. חובה לשנות אסטרטגיה: לסנתז, להביא זווית חדשה, להציע ידע או צעד מעשי. אין לחזור על אותה שאלה ואין להציע החלפת נושא אלא אם המשתמש ביקש."
     : "";
 
   const system = `${SYSTEM_IDENTITY}\n\n${loopWarning}\n\nהחזירי JSON תקין בלבד. אל תציגי internal_rationale למשתמש.`;
-  const payload = buildUserPayload(message, recent, state, chunks);
+  const payload = buildUserPayload(message, recent, state, chunks, emotionalSignals);
 
   const response = await env.AI.run(MODEL, {
     messages: [
@@ -335,6 +391,7 @@ export async function generateSoulmateTurn(
 
   return {
     mode: parsed.mode,
+    emotional_signals: emotionalSignals,
     reply: parsed.reply.trim().slice(0, 5000),
     internal_rationale: typeof parsed.internal_rationale === "string" ? parsed.internal_rationale.slice(0, 1000) : "",
     state: next,
