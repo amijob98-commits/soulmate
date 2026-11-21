@@ -17,6 +17,9 @@ A personal AI companion for deep, practical human development. SOULMATE is desig
 - [Decisions and working rules](docs/DECISIONS_AND_WORKING_RULES.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Source ingestion register](docs/INGESTION_REGISTER.md)
+- [Retrieval and indexing standard](docs/RETRIEVAL_INDEXING_STANDARD.md)
+- [D1 knowledge retrieval engine](docs/KNOWLEDGE_RETRIEVAL_ENGINE.md)
+- Rebuild local FTS5 index: `scripts/rebuild_local_index.py`
 
 ## Project boundary
 This repository is for SOULMATE AMI only. It is separate from MASTER MIND and ACC (Agent Command Center).
